@@ -4,6 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import render, get_object_or_404
 from rest_framework.generics import ListAPIView
+from rest_framework import generics, viewsets, status, permissions
 from .models import (
     Student, Cruise, CruiseDetail, CruiseDetailFinal, Booking,
     GuestProfile, Product, Package, GroupBooking, BookingItinerary,
@@ -15,7 +16,6 @@ from .serializers import (
     ProductSerializer, PackageSerializer, GroupBookingSerializer,
     BookingItinerarySerializer, OnboardSpendingSerializer, HouseholdSerializer
 )
-from rest_framework import generics, status
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
@@ -212,10 +212,10 @@ class ConfirmBooking(APIView):
         return Response({"message": "Booking confirmed successfully"}, status=status.HTTP_200_OK)
 
 
-class HouseholdViewSet(generics.ModelViewSet):
+class HouseholdViewSet(viewsets.ModelViewSet):
     queryset = Household.objects.all()
     serializer_class = HouseholdSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
         household = serializer.save()
@@ -224,7 +224,7 @@ class HouseholdViewSet(generics.ModelViewSet):
         household.save()
 
 
-class GuestProfileViewSet(generics.ModelViewSet):
+class GuestProfileViewSet(viewsets.ModelViewSet):
     queryset = GuestProfile.objects.all()
     serializer_class = GuestProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -237,7 +237,7 @@ class GuestProfileViewSet(generics.ModelViewSet):
         return GuestProfile.objects.filter(user=self.request.user)
 
 
-class ProductViewSet(generics.ModelViewSet):
+class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
@@ -245,7 +245,7 @@ class ProductViewSet(generics.ModelViewSet):
     filterset_fields = ['type', 'is_allotment']
 
 
-class PackageViewSet(generics.ModelViewSet):
+class PackageViewSet(viewsets.ModelViewSet):
     queryset = Package.objects.all()
     serializer_class = PackageSerializer
     permission_classes = [IsAuthenticated]
@@ -253,7 +253,7 @@ class PackageViewSet(generics.ModelViewSet):
     filterset_fields = ['valid_from', 'valid_to']
 
 
-class GroupBookingViewSet(generics.ModelViewSet):
+class GroupBookingViewSet(viewsets.ModelViewSet):
     queryset = GroupBooking.objects.all()
     serializer_class = GroupBookingSerializer
     permission_classes = [IsAuthenticated]
@@ -262,7 +262,7 @@ class GroupBookingViewSet(generics.ModelViewSet):
         serializer.save(organizer=self.request.user.guestprofile)
 
 
-class BookingItineraryViewSet(generics.ModelViewSet):
+class BookingItineraryViewSet(viewsets.ModelViewSet):
     queryset = BookingItinerary.objects.all()
     serializer_class = BookingItinerarySerializer
     permission_classes = [IsAuthenticated]
@@ -273,7 +273,7 @@ class BookingItineraryViewSet(generics.ModelViewSet):
         return BookingItinerary.objects.filter(guest__user=self.request.user)
 
 
-class OnboardSpendingViewSet(generics.ModelViewSet):
+class OnboardSpendingViewSet(viewsets.ModelViewSet):
     queryset = OnboardSpending.objects.all()
     serializer_class = OnboardSpendingSerializer
     permission_classes = [IsAuthenticated]

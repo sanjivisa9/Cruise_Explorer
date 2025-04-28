@@ -1,0 +1,22 @@
+version: '3.3'
+
+services:
+  db:
+    image: postgres:15
+    container_name: cruise_explorer_db
+    environment:
+      POSTGRES_DB: cruise_explorer
+      POSTGRES_USER: cruise_user
+      POSTGRES_PASSWORD: cruise_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cruise_user -d cruise_explorer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
