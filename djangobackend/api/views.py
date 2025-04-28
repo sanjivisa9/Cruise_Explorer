@@ -1,25 +1,29 @@
 # Create your views here.
 from django.http import JsonResponse
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import render, get_object_or_404
 from rest_framework.generics import ListAPIView
-from .models import Student,Cruise,CruiseDetail,CruiseDetailFinal, Booking,LogedInUser
-from .serializers import StudentSerializer,CruiseSerializer,CruiseDetailSerializer,CruiseDetailFinalSerializer,BookingSerializer,LogedInUserSerializer
-from rest_framework import generics
+from .models import Student, Cruise, CruiseDetail, CruiseDetailFinal, Booking, LogedInUser
+from .serializers import StudentSerializer, CruiseSerializer, CruiseDetailSerializer, CruiseDetailFinalSerializer, BookingSerializer, LogedInUserSerializer
+from rest_framework import generics, status
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
-from rest_framework import status
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.db import transaction
+from django.core.exceptions import ValidationError
 import logging
 from django.contrib.auth.hashers import check_password
+from django_filters.rest_framework import DjangoFilterBackend
+from .filters import CruiseFilter
+from .pagination import CustomPagination
 
 logger = logging.getLogger(__name__)
+
 class StudentList(ListAPIView):
     queryset = Student.objects.all()  # This should be a valid queryset
     serializer_class = StudentSerializer
@@ -29,64 +33,27 @@ class CruiseList(ListAPIView):
     queryset = Cruise.objects.all()  # This should be a valid queryset
     serializer_class = CruiseSerializer
 
+
 class CruiseDetailList(ListAPIView):
     queryset = CruiseDetail.objects.all()  # This should be a valid queryset
     serializer_class = CruiseDetailSerializer
 
-class CruiseDetailFinalList(ListAPIView):
-    queryset = CruiseDetailFinal.objects.all()  # This should be a valid queryset
+
+class CruiseDetailFinalList(generics.ListAPIView):
+    queryset = CruiseDetailFinal.objects.all()
     serializer_class = CruiseDetailFinalSerializer
+    permission_classes = [AllowAny]
+    pagination_class = CustomPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = CruiseFilter
 
-# def get_rooms(request, cruise_id):
-#     cruise = CruiseDetailFinal.objects.get(id=cruise_id)
-#     booked_rooms = Booking.objects.filter(cruise=cruise).values_list('room_number', flat=True)
-#     rooms = [f'B{i+1}' for i in range(cruise.oceanviewForward)]
-    
-#     data = {
-#         'rooms': rooms,
-#         'booked_rooms': list(booked_rooms),
-#     }
-    
-#     return JsonResponse(data)
+    def get_queryset(self):
+        queryset = CruiseDetailFinal.objects.all()
+        origin = self.request.query_params.get('origin', None)
+        if origin:
+            queryset = queryset.filter(origin=origin)
+        return queryset.select_related()
 
-class CreateBooking(generics.CreateAPIView):
-    queryset = Booking.objects.all()
-    serializer_class = BookingSerializer
-
-# @api_view(['GET'])
-# def booked_rooms(request, cruise_id):
-#     cruise = CruiseDetailFinal.objects.get(id=cruise_id)
-#     bookings = Booking.objects.filter(cruise=cruise)
-#     serializer = BookingSerializer(bookings, many=True)
-#     return Response(serializer.data)
-
-
-# class CruiseDetailsDoneList(ListAPIView):
-#     queryset = CruiseDetailsDone.objects.all()  # This should be a valid queryset
-#     serializer_class = CruiseDetailsDoneSerializer
-
-
-# class AvailableRoomsView(generics.ListAPIView):
-#     serializer_class = CruiseDetailSerializer
-
-#     def get_queryset(self):
-#         room_type = self.request.query_params.get('roomType')
-#         deck = self.request.query_params.get('deck')
-#         location = self.request.query_params.get('location')
-#         cruise_name = self.request.query_params.get('cruiseName')
-
-#         queryset = CruiseDetailFinal.objects.filter(
-#             cruiseName=cruise_name,
-#             type=room_type,
-#             decks=deck,
-#             oceanviewForward=location if location == 'Forward' else None,
-#             oceanviewMiddle=location if location == 'Middle' else None,
-#             oceanviewAft=location if location == 'Aft' else None,
-#             InteriorForward=location if location == 'Forward' else None,
-#             InteriorMiddle=location if location == 'Middle' else None,
-#             InteriorAft=location if location == 'Aft' else None,
-#         )
-#         return queryset
 
 @login_required
 def available_rooms(request, cruise_id, room_type):
@@ -96,88 +63,100 @@ def available_rooms(request, cruise_id, room_type):
     available_rooms = [room for room in all_rooms if room not in booked_rooms]
     return JsonResponse({'available_rooms': available_rooms})
 
-@api_view(['POST'])
-def book_room(request):
-    permission_classes = [IsAuthenticated]
-    data = request.data
-    serializer = BookingSerializer(data=data)
-    
-    if serializer.is_valid():
-        serializer.save()
-        return Response({"message": "Room booked successfully!"}, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def get_rooms(request, cruise_id, room_type, location):
     try:
-        # Fetch the specific cruise
-        cruise = CruiseDetailFinal.objects.get(id=cruise_id)
-
-        # Get booked rooms based on cruise, room type, and location
-        booked_rooms = Booking.objects.filter(
-            cruise=cruise, room_type=room_type, location=location
-        ).values_list('room_number', flat=True)
-
-        # Construct field name dynamically based on room_type and location
-        if room_type == 'Oceanview' and location == 'forward':
-            field_name = 'oceanviewForward'
-        elif room_type == 'Oceanview' and location == 'middle':
-            field_name = 'oceanviewMiddle'
-        elif room_type == 'Oceanview' and location == 'backward':
-            field_name = 'oceanviewAft'
-        elif room_type == 'Interior' and location == 'forward':
-            field_name = 'InteriorForward'
-        elif room_type == 'Interior' and location == 'middle':
-            field_name = 'InteriorMiddle'
-        elif room_type == 'Interior' and location == 'backward':
-            field_name = 'InteriorAft'
-        else:
-            return JsonResponse({'error': 'Invalid room type or location'}, status=400)
-
-        # Access the dynamically constructed field (e.g., oceanviewForward, InteriorMiddle)
-        room_capacity = getattr(cruise, field_name)
-
-        # Generate room numbers (e.g., B1, B2, B3, ..., B{room_capacity})
-        available_rooms = [f'B{i+1}' for i in range(room_capacity)]
+        cruise = get_object_or_404(CruiseDetailFinal, id=cruise_id)
         
-        # Remove already booked rooms from available rooms
-        available_rooms = [room for room in available_rooms if room not in booked_rooms]
-
-        return JsonResponse({
-            'rooms': available_rooms,
+        # Get booked rooms
+        booked_rooms = Booking.objects.filter(
+            cruise=cruise,
+            room_type=room_type,
+            location=location
+        ).values_list('room_number', flat=True)
+        
+        # Get total rooms based on type and location
+        field_name = f"{room_type.lower()}{location.capitalize()}"
+        total_rooms = getattr(cruise, field_name, 0)
+        
+        # Generate available room numbers
+        all_rooms = [f'B{i+1}' for i in range(total_rooms)]
+        available_rooms = [room for room in all_rooms if room not in booked_rooms]
+        
+        return Response({
+            'available_rooms': available_rooms,
             'booked_rooms': list(booked_rooms)
         })
-
-    except CruiseDetailFinal.DoesNotExist:
-        return JsonResponse({'error': 'Cruise not found'}, status=404)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error(f"Error in get_rooms: {str(e)}")
+        return Response(
+            {'error': 'Failed to fetch rooms'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+class CreateBooking(generics.CreateAPIView):
+    serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        try:
+            # Check if room is already booked
+            existing_booking = Booking.objects.filter(
+                cruise_id=request.data['cruise'],
+                room_number=request.data['room_number']
+            ).exists()
+            
+            if existing_booking:
+                return Response(
+                    {'error': 'Room already booked'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            
+            return Response(
+                {'message': 'Booking created successfully'},
+                status=status.HTTP_201_CREATED
+            )
+        except ValidationError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error in CreateBooking: {str(e)}")
+            return Response(
+                {'error': 'Failed to create booking'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 @api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
 def cancel_booking(request):
-    permission_classes = [IsAuthenticated]
-    cruise_id = request.data.get('cruise')
-    room_type = request.data.get('room_type')
-    booked_rooms = request.data.get('booked_rooms')
-
-    # Log the received data
-    print(f"Received data: cruise_id={cruise_id}, room_type={room_type}, booked_rooms={booked_rooms}")
-
-    if not cruise_id or not room_type or not booked_rooms:
-        return Response({"error": "Invalid data - missing cruise, room type, or booked rooms"}, status=400)
-
-    if not booked_rooms:  # Additional check for empty booked_rooms
-        return Response({"error": "No rooms provided for cancellation"}, status=400)
-
     try:
-        # Proceed to delete the booking
-        Booking.objects.filter(cruise_id=cruise_id, room_type=room_type, room_number__in=booked_rooms).delete()
-        return Response({"message": "Rooms canceled successfully"}, status=200)
+        booking = get_object_or_404(
+            Booking,
+            cruise_id=request.data['cruise'],
+            room_number=request.data['room_number'],
+            user=request.user
+        )
+        booking.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
     except Exception as e:
-        return Response({"error": str(e)}, status=500)
+        logger.error(f"Error in cancel_booking: {str(e)}")
+        return Response(
+            {'error': 'Failed to cancel booking'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
-    
+
 class LoginView(APIView):
     def post(self, request):
         email = request.data.get('email')
@@ -191,6 +170,7 @@ class LoginView(APIView):
                 return Response({"error": "Incorrect password"}, status=status.HTTP_400_BAD_REQUEST)
         except LogedInUser.DoesNotExist:
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
 
 class SignupView(APIView):
     def post(self, request):
@@ -215,7 +195,6 @@ class LogoutView(APIView):
                 return Response({"error": "No refresh token provided."}, status=400)
         except Exception as e:
             return Response({"error": str(e)}, status=400)
-        
 
 
 class ConfirmBooking(APIView):
