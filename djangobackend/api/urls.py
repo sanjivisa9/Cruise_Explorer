@@ -1,8 +1,18 @@
-from django.urls import path
+from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from . import views
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework.routers import DefaultRouter
+from . import views
+
+router = DefaultRouter()
+router.register(r'households', views.HouseholdViewSet, basename='household')
+router.register(r'guest-profiles', views.GuestProfileViewSet, basename='guest-profile')
+router.register(r'products', views.ProductViewSet, basename='product')
+router.register(r'packages', views.PackageViewSet, basename='package')
+router.register(r'group-bookings', views.GroupBookingViewSet, basename='group-booking')
+router.register(r'booking-itineraries', views.BookingItineraryViewSet, basename='booking-itinerary')
+router.register(r'onboard-spending', views.OnboardSpendingViewSet, basename='onboard-spending')
 
 urlpatterns = [
     # Authentication endpoints
@@ -21,6 +31,12 @@ urlpatterns = [
     path('bookings/create/', views.CreateBooking.as_view(), name='create_booking'),
     path('bookings/cancel/', views.cancel_booking, name='cancel-booking'),
     path('bookings/confirm/', views.ConfirmBooking.as_view(), name='confirm-booking'),
+
+    # New endpoints
+    path('', include(router.urls)),
+    path('guest-spending/<int:guest_id>/', views.guest_spending_history, name='guest-spending-history'),
+    path('refer-guest/', views.refer_guest, name='refer-guest'),
+    path('suggest-products/', views.suggest_products, name='suggest-products'),
 ]
 
 if settings.DEBUG:

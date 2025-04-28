@@ -1,8 +1,9 @@
 from rest_framework import serializers
-from .models import Student, Cruise, CruiseDetail, CruiseDetailFinal, Booking, LogedInUser
-from django.contrib.auth.models import User
-from django.contrib.auth.hashers import make_password
-from django.contrib.auth.password_validation import validate_password
+from .models import (
+    Student, Cruise, CruiseDetail, CruiseDetailFinal, Booking, LogedInUser,
+    GuestProfile, Product, Package, PackageComponent, GroupBooking,
+    BookingItinerary, OnboardSpending, Household, SalesforceIntegration
+)
 
 class StudentSerializer(serializers.ModelSerializer):
     class Meta:
@@ -96,3 +97,68 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         user = User.objects.create_user(**validated_data)
         return user
+
+
+class HouseholdSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Household
+        fields = '__all__'
+
+
+class GuestProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GuestProfile
+        fields = '__all__'
+
+
+class ProductSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Product
+        fields = '__all__'
+
+    def validate(self, data):
+        if data['type'] in ['DINING', 'CONFERENCE', 'SPA'] and not data.get('schedule'):
+            raise serializers.ValidationError("Schedule is required for this product type")
+        return data
+
+
+class PackageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Package
+        fields = '__all__'
+
+    def validate(self, data):
+        if data['valid_to'] <= data['valid_from']:
+            raise serializers.ValidationError("Valid to date must be after valid from date")
+        return data
+
+
+class GroupBookingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GroupBooking
+        fields = '__all__'
+
+
+class BookingItinerarySerializer(serializers.ModelSerializer):
+    products = ProductSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = BookingItinerary
+        fields = '__all__'
+
+    def validate(self, data):
+        if data['total_cost'] < 0:
+            raise serializers.ValidationError("Total cost cannot be negative")
+        return data
+
+
+class OnboardSpendingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OnboardSpending
+        fields = '__all__'
+
+
+class SalesforceIntegrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SalesforceIntegration
+        fields = '__all__'

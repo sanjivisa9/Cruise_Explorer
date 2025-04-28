@@ -155,3 +155,90 @@ class LogedInUser(models.Model):
     username = models.CharField(max_length=100)
     email = models.EmailField(default="")
     password = models.CharField(max_length=100)
+
+
+class Household(models.Model):
+    name = models.CharField(max_length=100)
+    primary_contact = models.ForeignKey('GuestProfile', on_delete=models.SET_NULL, null=True, related_name='primary_household')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class GuestProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    household = models.ForeignKey(Household, on_delete=models.SET_NULL, null=True, related_name='members')
+    date_of_birth = models.DateField()
+    nationality = models.CharField(max_length=100)
+    passport_number = models.CharField(max_length=50)
+    dietary_preferences = models.JSONField(default=dict)
+    onboard_preferences = models.JSONField(default=dict)
+    loyalty_points = models.IntegerField(default=0)
+    referral_code = models.CharField(max_length=20, unique=True)
+    referred_by = models.ForeignKey('self', on_delete=models.SET_NULL, null=True)
+
+
+class Product(models.Model):
+    PRODUCT_TYPES = [
+        ('DINING', 'Dining'),
+        ('CONFERENCE', 'Conference Room'),
+        ('WORKSHOP', 'Workshop'),
+        ('SPA', 'Spa Treatment'),
+        ('HOTEL', 'Hotel'),
+        ('TRANSPORT', 'Transportation'),
+        ('EXCURSION', 'Shore Excursion'),
+        ('PACKAGE', 'Package'),
+    ]
+    
+    name = models.CharField(max_length=200)
+    type = models.CharField(max_length=20, choices=PRODUCT_TYPES)
+    description = models.TextField()
+    capacity = models.IntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    schedule = models.JSONField(null=True)
+    is_allotment = models.BooleanField(default=False)
+    allotment_details = models.JSONField(null=True)
+
+
+class Package(models.Model):
+    name = models.CharField(max_length=200)
+    products = models.ManyToManyField(Product, through='PackageComponent')
+    description = models.TextField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    valid_from = models.DateField()
+    valid_to = models.DateField()
+
+
+class PackageComponent(models.Model):
+    package = models.ForeignKey(Package, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    is_mandatory = models.BooleanField(default=False)
+    quantity = models.IntegerField(default=1)
+
+
+class GroupBooking(models.Model):
+    name = models.CharField(max_length=200)
+    organizer = models.ForeignKey(GuestProfile, on_delete=models.CASCADE)
+    cruise = models.ForeignKey(CruiseDetailFinal, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class BookingItinerary(models.Model):
+    booking = models.ForeignKey(Booking, on_delete=models.CASCADE)
+    guest = models.ForeignKey(GuestProfile, on_delete=models.CASCADE)
+    products = models.ManyToManyField(Product)
+    embarkation_port = models.CharField(max_length=100)
+    disembarkation_port = models.CharField(max_length=100)
+    total_cost = models.DecimalField(max_digits=10, decimal_places=2)
+
+
+class OnboardSpending(models.Model):
+    guest = models.ForeignKey(GuestProfile, on_delete=models.CASCADE)
+    cruise = models.ForeignKey(CruiseDetailFinal, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    transaction_date = models.DateTimeField(auto_now_add=True)
+    
+
+class SalesforceIntegration(models.Model):
+    guest = models.OneToOneField(GuestProfile, on_delete=models.CASCADE)
+    salesforce_id = models.CharField(max_length=100, unique=True)
+    last_synced = models.DateTimeField(auto_now=True)

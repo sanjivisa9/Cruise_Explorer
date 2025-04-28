@@ -4,8 +4,17 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.shortcuts import render, get_object_or_404
 from rest_framework.generics import ListAPIView
-from .models import Student, Cruise, CruiseDetail, CruiseDetailFinal, Booking, LogedInUser
-from .serializers import StudentSerializer, CruiseSerializer, CruiseDetailSerializer, CruiseDetailFinalSerializer, BookingSerializer, LogedInUserSerializer
+from .models import (
+    Student, Cruise, CruiseDetail, CruiseDetailFinal, Booking,
+    GuestProfile, Product, Package, GroupBooking, BookingItinerary,
+    OnboardSpending, Household
+)
+from .serializers import (
+    StudentSerializer, CruiseSerializer, CruiseDetailSerializer,
+    CruiseDetailFinalSerializer, BookingSerializer, GuestProfileSerializer,
+    ProductSerializer, PackageSerializer, GroupBookingSerializer,
+    BookingItinerarySerializer, OnboardSpendingSerializer, HouseholdSerializer
+)
 from rest_framework import generics, status
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.csrf import csrf_exempt
@@ -201,3 +210,124 @@ class ConfirmBooking(APIView):
     def post(self, request):
         # Add logic to confirm the booking here
         return Response({"message": "Booking confirmed successfully"}, status=status.HTTP_200_OK)
+
+
+class HouseholdViewSet(generics.ModelViewSet):
+    queryset = Household.objects.all()
+    serializer_class = HouseholdSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        household = serializer.save()
+        guest_profile = GuestProfile.objects.get(user=self.request.user)
+        household.primary_contact = guest_profile
+        household.save()
+
+
+class GuestProfileViewSet(generics.ModelViewSet):
+    queryset = GuestProfile.objects.all()
+    serializer_class = GuestProfileSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['nationality', 'household']
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return GuestProfile.objects.all()
+        return GuestProfile.objects.filter(user=self.request.user)
+
+
+class ProductViewSet(generics.ModelViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['type', 'is_allotment']
+
+
+class PackageViewSet(generics.ModelViewSet):
+    queryset = Package.objects.all()
+    serializer_class = PackageSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['valid_from', 'valid_to']
+
+
+class GroupBookingViewSet(generics.ModelViewSet):
+    queryset = GroupBooking.objects.all()
+    serializer_class = GroupBookingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(organizer=self.request.user.guestprofile)
+
+
+class BookingItineraryViewSet(generics.ModelViewSet):
+    queryset = BookingItinerary.objects.all()
+    serializer_class = BookingItinerarySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return BookingItinerary.objects.all()
+        return BookingItinerary.objects.filter(guest__user=self.request.user)
+
+
+class OnboardSpendingViewSet(generics.ModelViewSet):
+    queryset = OnboardSpending.objects.all()
+    serializer_class = OnboardSpendingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return OnboardSpending.objects.all()
+        return OnboardSpending.objects.filter(guest__user=self.request.user)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def guest_spending_history(request, guest_id):
+    try:
+        spending = OnboardSpending.objects.filter(guest_id=guest_id)
+        serializer = OnboardSpendingSerializer(spending, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def refer_guest(request):
+    try:
+        referrer = request.user.guestprofile
+        referred_email = request.data.get('email')
+        referral_code = request.data.get('referral_code')
+        
+        if GuestProfile.objects.filter(referral_code=referral_code).exists():
+            return Response({'error': 'Invalid referral code'}, status=400)
+            
+        # Add referral logic here
+        referrer.loyalty_points += 100  # Example points
+        referrer.save()
+        
+        return Response({'message': 'Referral successful'})
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def suggest_products(request):
+    try:
+        guest = request.user.guestprofile
+        preferences = guest.onboard_preferences
+        
+        # Simple product suggestion based on preferences
+        suggested_products = Product.objects.filter(
+            type__in=preferences.get('interested_categories', [])
+        )
+        
+        serializer = ProductSerializer(suggested_products, many=True)
+        return Response(serializer.data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
